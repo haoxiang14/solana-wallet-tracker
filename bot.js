@@ -1,8 +1,12 @@
-const TelegramBot = require('node-telegram-bot-api');
-const express = require('express');
-const bodyParser = require('body-parser');
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
+import TelegramBot from 'node-telegram-bot-api';
+import express from 'express';
+import { createClient } from '@supabase/supabase-js';
+import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+import bodyParser from 'body-parser';
+
+
+dotenv.config();
 
 // Initialize Supabase
 const supabase = createClient(
@@ -13,6 +17,26 @@ const supabase = createClient(
 // Initialize Express
 const app = express();
 app.use(bodyParser.json());
+
+async function updateHeliusWebhookAddresses(addresses) {
+    try {
+        const response = await fetch(
+            `https://api.helius.xyz/v0/webhooks/5be74fcf-8bde-4cb1-8005-63c146f2a316?api-key=${process.env.HELIUS_API_KEY}`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accountAddresses: addresses,
+                })
+            }
+        );
+        const data = await response.json();
+        console.log('Helius webhook updated:', data);
+    } catch (error) {
+        console.error('Error updating Helius webhook:', error);
+        throw error;
+    }
+}
 
 // Bot Configuration
 const botOptions = {
@@ -55,6 +79,18 @@ const MESSAGES = {
 
 // Database operations
 const db = {
+
+    async getAllActiveWallets() {
+        const { data, error } = await supabase
+            .from('wallet_subscriptions')
+            .select('wallet_address')
+            .eq('is_active', true)
+            .distinct();
+
+        if (error) throw error;
+        return data.map(row => row.wallet_address);
+    },
+
     async addWallet(telegramUserId, walletAddress) {
         const { data: existing } = await supabase
             .from('wallet_subscriptions')
@@ -78,6 +114,8 @@ const db = {
             .select();
 
         if (error) throw error;
+        const allWallets = await this.getAllActiveWallets();
+        await updateHeliusWebhookAddresses(allWallets);
         return data;
     },
 
@@ -89,6 +127,9 @@ const db = {
             .eq('wallet_address', walletAddress);
 
         if (error) throw error;
+        const allWallets = await this.getAllActiveWallets();
+        await updateHeliusWebhookAddresses(allWallets);
+
     },
 
     async listWallets(telegramUserId) {
@@ -116,6 +157,7 @@ const db = {
 
 // State management
 class StateManager {
+    
     constructor() {
         this.states = new Map();
         this.timeouts = new Map();
@@ -332,42 +374,72 @@ function setupBotHandlers() {
 // Webhook handler
 app.post('/webhook', async (req, res) => {
     try {
-        const transactions = req.body;
+        console.log('📦 Received webhook data:', JSON.stringify(req.body, null, 2));
         
+        const transactions = req.body;
         for (const tx of transactions) {
-            if (tx.type === 'DEX_TRADE') {
-                const tradingWallet = tx.events.dexTrade.wallet;
-                const interestedUsers = await db.findUsersForWallet(tradingWallet);
-                
-                for (const userId of interestedUsers) {
-                    const message = formatTradeMessage(tx);
-                    await bot.sendMessage(userId, message, { parse_mode: 'HTML' })
-                        .catch(error => console.error('Trade notification error:', error));
+            if (tx.type === 'SWAP') {
+                const parsedSwap = parseSwapDescription(tx.description);
+                if (parsedSwap) {
+                    // Find all users monitoring this wallet
+                    const users = await db.findUsersForWallet(parsedSwap.wallet);
+                    if (users && users.length > 0) {
+                        const message = formatSwapMessage(tx);
+                        // Send notification to all monitoring users
+                        for (const userId of users) {
+                            try {
+                                await bot.sendMessage(userId, message, {
+                                    parse_mode: 'HTML',
+                                    disable_web_page_preview: true
+                                });
+                                console.log(`✅ Notification sent to user ${userId}`);
+                            } catch (error) {
+                                console.error(`Failed to send message to user ${userId}:`, error);
+                            }
+                        }
+                    }
                 }
+            } else if (tx.type === 'TRANSFER') {
+                // Handle transfer transactions if needed
+                // Similar structure to SWAP handling
             }
         }
         
-        res.status(200).send('OK');
+        res.status(200).json({ success: true });
     } catch (error) {
-        console.error('Webhook error:', error);
-        res.status(500).send('Error processing webhook');
+        console.error('Error processing webhook:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-function formatTradeMessage(tx) {
-    const trade = tx.events.dexTrade;
-    const action = trade.side === 'buy' ? '🟢 Buy' : '🔴 Sell';
-    
-    const inAmount = (trade.tokenInAmount / Math.pow(10, trade.tokenIn.decimals)).toFixed(4);
-    const outAmount = (trade.tokenOutAmount / Math.pow(10, trade.tokenOut.decimals)).toFixed(4);
+function formatSwapMessage(tx) {
+    return `
+🔄 <b>New Swap Detected!</b>
 
-    return `${action} Transaction Detected!\n\n` +
-           `🏦 DEX: ${trade.liquidityPoolProgram}\n` +
-           `💱 Swap:\n` +
-           `   ${inAmount} ${trade.tokenIn.symbol} ➡️ ${outAmount} ${trade.tokenOut.symbol}\n\n` +
-           `👛 Wallet: ${trade.wallet}\n` +
-           `⏰ Time: ${new Date(tx.timestamp * 1000).toLocaleString()}\n\n` +
-           `🔍 <a href="https://solscan.io/tx/${tx.signature}">View on Solscan</a>`;
+<b>Type:</b> ${tx.type}
+<b>Source:</b> ${tx.source}
+<b>Date:</b> ${tx.timestamp}
+<b>Description:</b> ${tx.description}
+
+🔍 <a href="${tx.explorer}">View on Explorer</a>
+`;
+}
+
+function parseSwapDescription(description) {
+    // Improved regex to handle longer wallet addresses
+    const regex = /([1-9A-HJ-NP-Za-km-z]{32,44})\s+swapped\s+([\d.]+)\s+(\w+)\s+for\s+([\d.]+)\s+([1-9A-HJ-NP-Za-km-z]{32,44})/;
+    const match = description.match(regex);
+    
+    if (match) {
+        return {
+            wallet: match[1],
+            fromAmount: match[2],
+            fromToken: match[3],
+            toAmount: match[4],
+            toToken: match[5]
+        };
+    }
+    return null;
 }
 
 // Start the bot
