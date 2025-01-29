@@ -375,33 +375,26 @@ function setupBotHandlers() {
 app.post('/webhook', async (req, res) => {
     try {
         console.log('📦 Received webhook data:', JSON.stringify(req.body, null, 2));
-        
         const transactions = req.body;
+
         for (const tx of transactions) {
             if (tx.type === 'SWAP') {
-                const parsedSwap = parseSwapDescription(tx.description);
-                if (parsedSwap) {
-                    // Find all users monitoring this wallet
-                    const users = await db.findUsersForWallet(parsedSwap.wallet);
-                    if (users && users.length > 0) {
+                const walletMatch = tx.description.match(/^([1-9A-HJ-NP-Za-km-z]{32,44})/);
+
+                if (walletMatch) {
+                    const walletAddress = walletMatch[1];
+                    console.log('Wallet address:', walletAddress); 
+                    const users = await db.findUsersForWallet(walletAddress);
+                    console.log('🔍 Found users for wallet:', walletAddress, users);
+                    // 3. Send to each user's chatId
+                    for (const userId of users) {
                         const message = formatSwapMessage(tx);
-                        // Send notification to all monitoring users
-                        for (const userId of users) {
-                            try {
-                                await bot.sendMessage(userId, message, {
-                                    parse_mode: 'HTML',
-                                    disable_web_page_preview: true
-                                });
-                                console.log(`✅ Notification sent to user ${userId}`);
-                            } catch (error) {
-                                console.error(`Failed to send message to user ${userId}:`, error);
-                            }
-                        }
+                        console.log('Sending message to user:', userId, message);
+                        await bot.sendMessage(userId, message, {
+                            parse_mode: 'HTML'
+                        });
                     }
                 }
-            } else if (tx.type === 'TRANSFER') {
-                // Handle transfer transactions if needed
-                // Similar structure to SWAP handling
             }
         }
         
@@ -412,35 +405,52 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+
+function parseSwapDescription(description) {
+    try {
+        // Extract amounts and tokens from swap description
+        const swapPattern = /swapped\s+([\d.]+)\s+(\w+)\s+for\s+([\d.]+)\s+([^\s]+)/;
+        const match = description.match(swapPattern);
+        console.log('Match:', match);
+        if (match) {
+            return {
+                fromAmount: parseFloat(match[1]),
+                fromToken: match[2],
+                toAmount: parseFloat(match[3]),
+                toToken: match[4]
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error('Error parsing swap description:', error);
+        return null;
+    }
+}
+
 function formatSwapMessage(tx) {
+    const swapDetails = parseSwapDescription(tx.description);
+    console.log('Swap details:', swapDetails);
+    
+    // Construct explorer URL once (DRY principle)
+    const explorerLink = `https://solscan.io/tx/${tx.signature}`;
+
+    if (!swapDetails) {
+        return `
+🔄 <b>New Swap Detected!</b>
+<b>Description:</b> ${tx.description}
+🔍 <a href="${explorerLink}">View on Explorer</a>`;
+    }
+
     return `
 🔄 <b>New Swap Detected!</b>
 
-<b>Type:</b> ${tx.type}
-<b>Source:</b> ${tx.source}
-<b>Date:</b> ${tx.timestamp}
-<b>Description:</b> ${tx.description}
+💱 <b>Swapped:</b> ${swapDetails.fromAmount} ${swapDetails.fromToken}
+📥 <b>For:</b> ${swapDetails.toAmount} ${swapDetails.toToken}
 
-🔍 <a href="${tx.explorer}">View on Explorer</a>
+🔍 <a href="${explorerLink}">View on Explorer</a>
 `;
 }
 
-function parseSwapDescription(description) {
-    // Improved regex to handle longer wallet addresses
-    const regex = /([1-9A-HJ-NP-Za-km-z]{32,44})\s+swapped\s+([\d.]+)\s+(\w+)\s+for\s+([\d.]+)\s+([1-9A-HJ-NP-Za-km-z]{32,44})/;
-    const match = description.match(regex);
-    
-    if (match) {
-        return {
-            wallet: match[1],
-            fromAmount: match[2],
-            fromToken: match[3],
-            toAmount: match[4],
-            toToken: match[5]
-        };
-    }
-    return null;
-}
 
 // Start the bot
 initBot().catch(error => {
