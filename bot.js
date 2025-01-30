@@ -21,7 +21,7 @@ app.use(bodyParser.json());
 async function updateHeliusWebhookAddresses(addresses) {
     try {
         const response = await fetch(
-            `https://api.helius.xyz/v0/webhooks/5be74fcf-8bde-4cb1-8005-63c146f2a316?api-key=${process.env.HELIUS_API_KEY}`,
+            `https://api.helius.xyz/v0/webhooks/${process.env.HELIUS_WH_ID}?api-key=${process.env.HELIUS_API_KEY}`,
             {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -374,24 +374,24 @@ function setupBotHandlers() {
 // Webhook handler
 app.post('/webhook', async (req, res) => {
     try {
-        console.log('📦 Received webhook data:', JSON.stringify(req.body, null, 2));
+       
         const transactions = req.body;
+        console.log(transactions);
 
         for (const tx of transactions) {
             if (tx.type === 'SWAP') {
                 const walletMatch = tx.description.match(/^([1-9A-HJ-NP-Za-km-z]{32,44})/);
+                console.log(tx.tokenTransfers); 
 
                 if (walletMatch) {
                     const walletAddress = walletMatch[1];
-                    console.log('Wallet address:', walletAddress); 
                     const users = await db.findUsersForWallet(walletAddress);
-                    console.log('🔍 Found users for wallet:', walletAddress, users);
                     // 3. Send to each user's chatId
                     for (const userId of users) {
                         const message = formatSwapMessage(tx);
-                        console.log('Sending message to user:', userId, message);
                         await bot.sendMessage(userId, message, {
-                            parse_mode: 'HTML'
+                            parse_mode: 'HTML',
+                            disable_web_page_preview: true,
                         });
                     }
                 }
@@ -409,15 +409,16 @@ app.post('/webhook', async (req, res) => {
 function parseSwapDescription(description) {
     try {
         // Extract amounts and tokens from swap description
-        const swapPattern = /swapped\s+([\d.]+)\s+(\w+)\s+for\s+([\d.]+)\s+([^\s]+)/;
+        const swapPattern = /(\w+)\s+swapped\s+([\d.]+)\s+(\w+)\s+for\s+([\d.]+)\s+([^\s]+)/;
         const match = description.match(swapPattern);
-        console.log('Match:', match);
+        console.log(match);
         if (match) {
             return {
-                fromAmount: parseFloat(match[1]),
-                fromToken: match[2],
-                toAmount: parseFloat(match[3]),
-                toToken: match[4]
+                address : match[1],
+                fromAmount: parseFloat(match[2]),
+                fromToken: match[3],
+                toAmount: parseFloat(match[4]),
+                toToken: match[5]
             };
         }
         return null;
@@ -427,12 +428,41 @@ function parseSwapDescription(description) {
     }
 }
 
+async function getTokenInfo(contractAddress) {
+    try {
+        const response = await fetch(`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${contractAddress}`);
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching token data:', error);
+        return null;
+    }
+}
+
 function formatSwapMessage(tx) {
     const swapDetails = parseSwapDescription(tx.description);
-    console.log('Swap details:', swapDetails);
+    // console.log('Swap details:', swapDetails);
     
-    // Construct explorer URL once (DRY principle)
     const explorerLink = `https://solscan.io/tx/${tx.signature}`;
+    const gmgnLink = `https://gmgn.ai/sol/address/${swapDetails.address}`;
+    const shortAddress = `${swapDetails.address.slice(0, 6)}...${swapDetails.address.slice(-4)}`;
+    // const tokenTransfers = tx.tokenTransfers;
+    // const fromToken = tokenTransfers[0].mint;
+    // const toToken = tokenTransfers[1].mint;
+    // console.log(fromToken, toToken);
+
+    // let tokenContract;
+
+    // if (fromToken == 'So11111111111111111111111111111111111111112')
+    // {
+    //     tokenContract = toToken;
+    // }
+    // else 
+    // {   
+    //     tokenContract = fromToken;
+    // }
+
+    // console.log(tokenContract);
 
     if (!swapDetails) {
         return `
@@ -442,11 +472,10 @@ function formatSwapMessage(tx) {
     }
 
     return `
-🔄 <b>New Swap Detected!</b>
-
-💱 <b>Swapped:</b> ${swapDetails.fromAmount} ${swapDetails.fromToken}
+🔄 <b>New Swap Detected!</b>/n/n
+💰 <a href="${gmgnLink}"> ${shortAddress} </a>
+💱 <b> Swapped:</b> ${swapDetails.fromAmount} ${swapDetails.fromToken}
 📥 <b>For:</b> ${swapDetails.toAmount} ${swapDetails.toToken}
-
 🔍 <a href="${explorerLink}">View on Explorer</a>
 `;
 }
