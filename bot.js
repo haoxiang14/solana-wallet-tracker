@@ -472,11 +472,11 @@ function formatSwapMessage(tx) {
     }
 
     return `
-🔄 <b>New Swap Detected!</b>/n/n
+🔄 <b>New Swap Detected!</b> \n
 💰 <a href="${gmgnLink}"> ${shortAddress} </a>
 💱 <b> Swapped:</b> ${swapDetails.fromAmount} ${swapDetails.fromToken}
 📥 <b>For:</b> ${swapDetails.toAmount} ${swapDetails.toToken}
-🔍 <a href="${explorerLink}">View on Explorer</a>
+🔍 <a href="${explorerLink}">View on Explorer</a> \n
 `;
 }
 
