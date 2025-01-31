@@ -372,28 +372,114 @@ function setupBotHandlers() {
 }
 
 // Webhook handler
+// app.post('/webhook', async (req, res) => {
+//     try {
+       
+//         const transactions = req.body;
+//         console.log(transactions);
+
+//         for (const tx of transactions) {
+//             if (tx.type === 'SWAP') {
+//                 const walletMatch = tx.description.match(/^([1-9A-HJ-NP-Za-km-z]{32,44})/);
+            
+//                 const tokenTransfers = tx.tokenTransfers;
+
+//                 const fromToken = tokenTransfers[0].mint;
+//                 const toToken = tokenTransfers[1].mint;
+//                 console.log(fromToken, toToken);
+
+//                 let tokenContract;
+
+//                 if (fromToken == 'So11111111111111111111111111111111111111112')
+//                 {
+//                     tokenContract = toToken;
+//                 }
+//                 else 
+//                 {   
+//                     tokenContract = fromToken;
+//                 }
+
+//                 const tokenData = await getTokenInfo(tokenContract);
+//                 console.log(tokenData);
+
+//                 if (walletMatch) {
+//                     const walletAddress = walletMatch[1];
+//                     const users = await db.findUsersForWallet(walletAddress);
+//                     // 3. Send to each user's chatId
+//                     for (const userId of users) {
+//                         const message = formatSwapMessage(tx, tokenData);
+//                         await bot.sendMessage(userId, message, {
+//                             parse_mode: 'HTML',
+//                             disable_web_page_preview: true,
+//                         });
+//                     }
+//                 }
+//             }
+//         }
+        
+//         res.status(200).json({ success: true });
+//     } catch (error) {
+//         console.error('Error processing webhook:', error);
+//         res.status(500).json({ error: 'Internal server error' });
+//     }
+// });
+
 app.post('/webhook', async (req, res) => {
     try {
-       
         const transactions = req.body;
-        console.log(transactions);
+        console.log('Received transactions:', transactions);
 
         for (const tx of transactions) {
             if (tx.type === 'SWAP') {
                 const walletMatch = tx.description.match(/^([1-9A-HJ-NP-Za-km-z]{32,44})/);
-                console.log(tx.tokenTransfers); 
+                
+                // Skip if no wallet match
+                if (!walletMatch) continue;
+                
+                try {
+                    const tokenTransfers = tx.tokenTransfers;
+                    const fromToken = tokenTransfers[0].mint;
+                    const toToken = tokenTransfers[1].mint;
+                    console.log('Token transfers:', fromToken, toToken);
 
-                if (walletMatch) {
+                    // Determine which token to fetch data for
+                    const tokenContract = fromToken === 'So11111111111111111111111111111111111111112'
+                        ? toToken 
+                        : fromToken;
+
+                    // Fetch token data
+                    const tokenData = await getTokenInfo(tokenContract);
+                    console.log('Token data:', tokenData);
+
+                    if (!tokenData) {
+                        console.error('Failed to fetch token data for:', tokenContract);
+                        continue;
+                    }
+
                     const walletAddress = walletMatch[1];
                     const users = await db.findUsersForWallet(walletAddress);
-                    // 3. Send to each user's chatId
+
+                    // Format message once outside the user loop
+                    const formattedMessage = formatSwapMessage(tx, tokenData);
+
+                    // Send to each subscribed user
                     for (const userId of users) {
-                        const message = formatSwapMessage(tx);
-                        await bot.sendMessage(userId, message, {
-                            parse_mode: 'HTML',
-                            disable_web_page_preview: true,
-                        });
+                        try {
+                            await bot.sendMessage(
+                                userId, 
+                                formattedMessage.text, 
+                                formattedMessage.options
+                            );
+                        } catch (sendError) {
+                            console.error(`Failed to send message to user ${userId}:`, sendError);
+                            // Continue with next user even if one fails
+                            continue;
+                        }
                     }
+                } catch (txError) {
+                    console.error('Error processing transaction:', txError);
+                    // Continue with next transaction even if one fails
+                    continue;
                 }
             }
         }
@@ -439,46 +525,205 @@ async function getTokenInfo(contractAddress) {
     }
 }
 
-function formatSwapMessage(tx) {
-    const swapDetails = parseSwapDescription(tx.description);
-    // console.log('Swap details:', swapDetails);
+function convertToNumber(value) {
+    // Remove any commas from string numbers and convert to float
+    if (typeof value === 'string') {
+        value = value.replace(/,/g, '');
+    }
+    const num = Number(value);
+    return isNaN(num) ? 0 : num;
+}
+
+function formatNumber(value) {
+    // Convert string to number first
+    const num = convertToNumber(value);
     
-    const explorerLink = `https://solscan.io/tx/${tx.signature}`;
-    const gmgnLink = `https://gmgn.ai/sol/address/${swapDetails.address}`;
-    const shortAddress = `${swapDetails.address.slice(0, 6)}...${swapDetails.address.slice(-4)}`;
-    // const tokenTransfers = tx.tokenTransfers;
-    // const fromToken = tokenTransfers[0].mint;
-    // const toToken = tokenTransfers[1].mint;
-    // console.log(fromToken, toToken);
+    if (num === 0) return '0';
+    
+    try {
+        if (num >= 1000000) {
+            return `${(num / 1000000).toFixed(2)}M`;
+        } else if (num >= 1000) {
+            return `${(num / 1000).toFixed(2)}K`;
+        }
+        return num.toFixed(2);
+    } catch (error) {
+        console.error('Error formatting number:', error);
+        return '0';
+    }
+}
 
-    // let tokenContract;
 
-    // if (fromToken == 'So11111111111111111111111111111111111111112')
-    // {
-    //     tokenContract = toToken;
-    // }
-    // else 
-    // {   
-    //     tokenContract = fromToken;
-    // }
+// function formatSwapMessage(tx, tokenData) {
+//     const swapDetails = parseSwapDescription(tx.description);
+//     console.log('Swap details:', swapDetails);
+    
+//     const explorerLink = `https://solscan.io/tx/${tx.signature}`;
+//     const gmgnLink = `https://gmgn.ai/sol/address/${swapDetails.address}`;
+//     const gmgnTokenLink = `https://gmgn.ai/sol/token/${tokenData.data.attributes.address}`;
+//     const GTLink = `https://www.geckoterminal.com/solana/tokens/${tokenData.data.attributes.address}`;
+//     const LYTBotBuy = `https://t.me/LeYeetbot?start=buy_${tokenData.data.attributes.address}`;
+//     const LYTBotSell = `https://t.me/LeYeetbot?start=sell_${tokenData.data.attributes.address}`;
+//     const rugcheck = `https://rugcheck.xyz/tokens/${tokenData.data.attributes.address}`;
+//     const shortAddress = `${swapDetails.address.slice(0, 6)}...${swapDetails.address.slice(-4)}`;
+//     const token = tokenData.data.attributes;
 
-    // console.log(tokenContract);
+//     const price = token.price_usd;
+//     const mc = formatNumber(token.fdv_usd);
+//     const volume = formatNumber(token.volume_usd.h24);
 
+//     let fromToken = swapDetails.fromToken;
+//     let toToken = swapDetails.toToken;
+
+//     if (fromToken === 'SOL') {
+//         toToken = token.symbol;
+//     } else if (toToken === 'SOL') {
+//         fromToken = token.symbol;
+//     }
+
+//     const message =
+// `
+// 🔄 <b>New Swap Detected!</b> \n
+// 💰 <a href="${gmgnLink}"> ${shortAddress} </a>
+// 💱 <b> Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
+// 📥 <b> For:</b> ${swapDetails.toAmount} ${toToken} \n
+// 🪙 <b> Token:</b> 
+// <a href="${gmgnTokenLink}">$${token.symbol.toUpperCase()} </a>
+// Price: $${price}
+// MC: $${mc}
+// 24Hrs Vol: $${volume} \n
+// 🔍 <a href="${explorerLink}">Explorer</a> \n
+// `;
+
+//     if (!swapDetails) {
+//         return `
+// 🔄 <b>New Swap Detected!</b>
+// <b>Description:</b> ${tx.description}
+// 🔍 <a href="${explorerLink}">View on Explorer</a>`;
+//     }
+
+//     return {
+//         text: message,
+//         options: {
+//             parse_mode: 'HTML',
+//             disable_web_page_preview: true,
+//             reply_markup: {
+//                 inline_keyboard: [
+//                     [
+//                         { text: '🔎 Explorer', url: explorerLink },
+//                         { text: '🦖 GMGN', url: gmgnTokenLink},
+                        
+//                     ],
+//                     [
+//                         { text: '📈 Chart', url: GTLink },
+//                         { text: '😈 Rug Check', url: rugcheck },
+//                     ],
+//                     [
+//                         { text: '💰 Buy', url: LYTBotBuy },
+//                         { text: '💸 Sell', url: LYTBotSell },
+//                     ],
+
+//                 ]
+//             }
+//         }
+//     }
+
+
+// }
+
+function formatSwapMessage(tx, tokenData) {
+    const swapDetails = parseSwapDescription(tx.description);
+    console.log('Swap details:', swapDetails);
+
+    // Early validation check
     if (!swapDetails) {
-        return `
+        const explorerLink = `https://solscan.io/tx/${tx.signature}`;
+        return {
+            text: `
 🔄 <b>New Swap Detected!</b>
 <b>Description:</b> ${tx.description}
-🔍 <a href="${explorerLink}">View on Explorer</a>`;
+🔍 <a href="${explorerLink}">View on Explorer</a>`,
+            options: {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            }
+        };
     }
 
-    return `
-🔄 <b>New Swap Detected!</b> \n
-💰 <a href="${gmgnLink}"> ${shortAddress} </a>
-💱 <b> Swapped:</b> ${swapDetails.fromAmount} ${swapDetails.fromToken}
-📥 <b>For:</b> ${swapDetails.toAmount} ${swapDetails.toToken}
-🔍 <a href="${explorerLink}">View on Explorer</a> \n
+    // Safely access token data
+    const token = tokenData?.data?.attributes;
+    if (!token) {
+        console.error('Token data is missing or invalid');
+        return {
+            text: '❌ Error: Invalid token data',
+            options: { parse_mode: 'HTML' }
+        };
+    }
+
+    // Create all links
+    const explorerLink = `https://solscan.io/tx/${tx.signature}`;
+    const gmgnLink = `https://gmgn.ai/sol/address/${swapDetails.address}`;
+    const gmgnTokenLink = `https://gmgn.ai/sol/token/${token.address}`;
+    const GTLink = `https://www.geckoterminal.com/solana/tokens/${token.address}`;
+    const LYTBotBuy = `https://t.me/LeYeetbot?start=buy_${token.address}`;
+    const LYTBotSell = `https://t.me/LeYeetbot?start=sell_${token.address}`;
+    const rugcheck = `https://rugcheck.xyz/tokens/${token.address}`;
+    const shortAddress = `${swapDetails.address.slice(0, 6)}...${swapDetails.address.slice(-4)}`;
+
+    // Format numbers
+    const price = token.price_usd;
+    const mc = formatNumber(token.fdv_usd);
+    const volume = formatNumber(token.volume_usd?.h24);
+
+    // Handle token symbols
+    let fromToken = swapDetails.fromToken;
+    let toToken = swapDetails.toToken;
+
+    if (fromToken === 'SOL') {
+        toToken = token.symbol;
+    } else if (toToken === 'SOL') {
+        fromToken = token.symbol;
+    }
+
+    const message = `
+🔄 <b>New Swap Detected!</b>
+
+💰 <a href="${gmgnLink}">${shortAddress}</a>
+💱 <b>Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
+📥 <b>For:</b> ${swapDetails.toAmount} ${toToken}
+
+🪙 <b>Token:</b> 
+<a href="${gmgnTokenLink}">$${token.symbol?.toUpperCase() || 'UNKNOWN'}</a>
+Price: $${price}
+MC: $${mc}
+24Hrs Vol: $${volume}\n
 `;
+
+    return {
+        text: message,
+        options: {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🔎 Explorer', url: explorerLink },
+                        { text: '🦖 GMGN', url: gmgnTokenLink }
+                    ],
+                    [
+                        { text: '📈 Chart', url: GTLink },
+                        { text: '😈 Rug Check', url: rugcheck }
+                    ],
+                    [
+                        { text: '💰 Buy', url: LYTBotBuy },
+                        { text: '💸 Sell', url: LYTBotSell }
+                    ]
+                ]
+            }
+        }
+    };
 }
+
 
 
 // Start the bot
