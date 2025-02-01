@@ -26,8 +26,13 @@ async function updateHeliusWebhookAddresses(addresses) {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    webhookURL: process.env.WEBHOOK_URL,
+                    transactionTypes: [
+                      "Any"
+                    ],
                     accountAddresses: addresses,
-                })
+                    webhookType: "enhanced"
+                }),
             }
         );
         const data = await response.json();
@@ -83,9 +88,8 @@ const db = {
     async getAllActiveWallets() {
         const { data, error } = await supabase
             .from('wallet_subscriptions')
-            .select('wallet_address')
+            .select('wallet_address', { distinct : true })
             .eq('is_active', true)
-            .distinct();
 
         if (error) throw error;
         return data.map(row => row.wallet_address);
@@ -115,6 +119,7 @@ const db = {
 
         if (error) throw error;
         const allWallets = await this.getAllActiveWallets();
+        console.log('All wallets:', allWallets);
         await updateHeliusWebhookAddresses(allWallets);
         return data;
     },
@@ -371,59 +376,6 @@ function setupBotHandlers() {
     });
 }
 
-// Webhook handler
-// app.post('/webhook', async (req, res) => {
-//     try {
-       
-//         const transactions = req.body;
-//         console.log(transactions);
-
-//         for (const tx of transactions) {
-//             if (tx.type === 'SWAP') {
-//                 const walletMatch = tx.description.match(/^([1-9A-HJ-NP-Za-km-z]{32,44})/);
-            
-//                 const tokenTransfers = tx.tokenTransfers;
-
-//                 const fromToken = tokenTransfers[0].mint;
-//                 const toToken = tokenTransfers[1].mint;
-//                 console.log(fromToken, toToken);
-
-//                 let tokenContract;
-
-//                 if (fromToken == 'So11111111111111111111111111111111111111112')
-//                 {
-//                     tokenContract = toToken;
-//                 }
-//                 else 
-//                 {   
-//                     tokenContract = fromToken;
-//                 }
-
-//                 const tokenData = await getTokenInfo(tokenContract);
-//                 console.log(tokenData);
-
-//                 if (walletMatch) {
-//                     const walletAddress = walletMatch[1];
-//                     const users = await db.findUsersForWallet(walletAddress);
-//                     // 3. Send to each user's chatId
-//                     for (const userId of users) {
-//                         const message = formatSwapMessage(tx, tokenData);
-//                         await bot.sendMessage(userId, message, {
-//                             parse_mode: 'HTML',
-//                             disable_web_page_preview: true,
-//                         });
-//                     }
-//                 }
-//             }
-//         }
-        
-//         res.status(200).json({ success: true });
-//     } catch (error) {
-//         console.error('Error processing webhook:', error);
-//         res.status(500).json({ error: 'Internal server error' });
-//     }
-// });
-
 app.post('/webhook', async (req, res) => {
     try {
         const transactions = req.body;
@@ -553,84 +505,6 @@ function formatNumber(value) {
     }
 }
 
-
-// function formatSwapMessage(tx, tokenData) {
-//     const swapDetails = parseSwapDescription(tx.description);
-//     console.log('Swap details:', swapDetails);
-    
-//     const explorerLink = `https://solscan.io/tx/${tx.signature}`;
-//     const gmgnLink = `https://gmgn.ai/sol/address/${swapDetails.address}`;
-//     const gmgnTokenLink = `https://gmgn.ai/sol/token/${tokenData.data.attributes.address}`;
-//     const GTLink = `https://www.geckoterminal.com/solana/tokens/${tokenData.data.attributes.address}`;
-//     const LYTBotBuy = `https://t.me/LeYeetbot?start=buy_${tokenData.data.attributes.address}`;
-//     const LYTBotSell = `https://t.me/LeYeetbot?start=sell_${tokenData.data.attributes.address}`;
-//     const rugcheck = `https://rugcheck.xyz/tokens/${tokenData.data.attributes.address}`;
-//     const shortAddress = `${swapDetails.address.slice(0, 6)}...${swapDetails.address.slice(-4)}`;
-//     const token = tokenData.data.attributes;
-
-//     const price = token.price_usd;
-//     const mc = formatNumber(token.fdv_usd);
-//     const volume = formatNumber(token.volume_usd.h24);
-
-//     let fromToken = swapDetails.fromToken;
-//     let toToken = swapDetails.toToken;
-
-//     if (fromToken === 'SOL') {
-//         toToken = token.symbol;
-//     } else if (toToken === 'SOL') {
-//         fromToken = token.symbol;
-//     }
-
-//     const message =
-// `
-// 🔄 <b>New Swap Detected!</b> \n
-// 💰 <a href="${gmgnLink}"> ${shortAddress} </a>
-// 💱 <b> Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
-// 📥 <b> For:</b> ${swapDetails.toAmount} ${toToken} \n
-// 🪙 <b> Token:</b> 
-// <a href="${gmgnTokenLink}">$${token.symbol.toUpperCase()} </a>
-// Price: $${price}
-// MC: $${mc}
-// 24Hrs Vol: $${volume} \n
-// 🔍 <a href="${explorerLink}">Explorer</a> \n
-// `;
-
-//     if (!swapDetails) {
-//         return `
-// 🔄 <b>New Swap Detected!</b>
-// <b>Description:</b> ${tx.description}
-// 🔍 <a href="${explorerLink}">View on Explorer</a>`;
-//     }
-
-//     return {
-//         text: message,
-//         options: {
-//             parse_mode: 'HTML',
-//             disable_web_page_preview: true,
-//             reply_markup: {
-//                 inline_keyboard: [
-//                     [
-//                         { text: '🔎 Explorer', url: explorerLink },
-//                         { text: '🦖 GMGN', url: gmgnTokenLink},
-                        
-//                     ],
-//                     [
-//                         { text: '📈 Chart', url: GTLink },
-//                         { text: '😈 Rug Check', url: rugcheck },
-//                     ],
-//                     [
-//                         { text: '💰 Buy', url: LYTBotBuy },
-//                         { text: '💸 Sell', url: LYTBotSell },
-//                     ],
-
-//                 ]
-//             }
-//         }
-//     }
-
-
-// }
-
 function formatSwapMessage(tx, tokenData) {
     const swapDetails = parseSwapDescription(tx.description);
     console.log('Swap details:', swapDetails);
@@ -688,15 +562,15 @@ function formatSwapMessage(tx, tokenData) {
     const message = `
 🔄 <b>New Swap Detected!</b>
 
-💰 <a href="${gmgnLink}">${shortAddress}</a>
-💱 <b>Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
-📥 <b>For:</b> ${swapDetails.toAmount} ${toToken}
+👛 <b>Wallet:</b> <a href="${gmgnLink}">${shortAddress}</a>
+📤 <b>Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
+📥 <b>For:</b> ${formatNumber(swapDetails.toAmount)} ${toToken}
 
-🪙 <b>Token:</b> 
 <a href="${gmgnTokenLink}">$${token.symbol?.toUpperCase() || 'UNKNOWN'}</a>
-Price: $${price}
-MC: $${mc}
-24Hrs Vol: $${volume}\n
+<b>Price:</b> $${price}
+<b>MC:</b> $${mc}
+<b>24h Vol:</b> $${volume}
+
 `;
 
     return {
@@ -724,8 +598,6 @@ MC: $${mc}
     };
 }
 
-
-
 // Start the bot
 initBot().catch(error => {
     console.error('Failed to initialize bot:', error);
@@ -750,3 +622,14 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+
+// 💰 <b>Wallet:</b><a href="${gmgnLink}">${shortAddress}</a>
+// 💱 <b>Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
+// 📥 <b>For:</b> ${swapDetails.toAmount} ${toToken}
+
+// 🪙 <b>Token:</b> 
+// <a href="${gmgnTokenLink}">$${token.symbol?.toUpperCase() || 'UNKNOWN'}</a>
+// Price: $${price}
+// MC: $${mc}
+// 24Hrs Vol: $${volume}\n
