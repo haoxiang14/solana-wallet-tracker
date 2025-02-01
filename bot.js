@@ -36,7 +36,7 @@ async function updateHeliusWebhookAddresses(addresses) {
             }
         );
         const data = await response.json();
-        console.log('Helius webhook updated:', data);
+        // console.log('Helius webhook updated:', data);
     } catch (error) {
         console.error('Error updating Helius webhook:', error);
         throw error;
@@ -119,7 +119,7 @@ const db = {
 
         if (error) throw error;
         const allWallets = await this.getAllActiveWallets();
-        console.log('All wallets:', allWallets);
+        // console.log('All wallets:', allWallets);
         await updateHeliusWebhookAddresses(allWallets);
         return data;
     },
@@ -379,7 +379,7 @@ function setupBotHandlers() {
 app.post('/webhook', async (req, res) => {
     try {
         const transactions = req.body;
-        console.log('Received transactions:', transactions);
+        // console.log('Received transactions:', transactions);
 
         for (const tx of transactions) {
             if (tx.type === 'SWAP') {
@@ -392,7 +392,7 @@ app.post('/webhook', async (req, res) => {
                     const tokenTransfers = tx.tokenTransfers;
                     const fromToken = tokenTransfers[0].mint;
                     const toToken = tokenTransfers[1].mint;
-                    console.log('Token transfers:', fromToken, toToken);
+                    // console.log('Token transfers:', fromToken, toToken);
 
                     // Determine which token to fetch data for
                     const tokenContract = fromToken === 'So11111111111111111111111111111111111111112'
@@ -401,7 +401,7 @@ app.post('/webhook', async (req, res) => {
 
                     // Fetch token data
                     const tokenData = await getTokenInfo(tokenContract);
-                    console.log('Token data:', tokenData);
+                    // console.log('Token data:', tokenData);
 
                     if (!tokenData) {
                         console.error('Failed to fetch token data for:', tokenContract);
@@ -449,7 +449,7 @@ function parseSwapDescription(description) {
         // Extract amounts and tokens from swap description
         const swapPattern = /(\w+)\s+swapped\s+([\d.]+)\s+(\w+)\s+for\s+([\d.]+)\s+([^\s]+)/;
         const match = description.match(swapPattern);
-        console.log(match);
+        // console.log(match);
         if (match) {
             return {
                 address : match[1],
@@ -512,7 +512,7 @@ function padValue (value, length) {
 
 function formatSwapMessage(tx, tokenData) {
     const swapDetails = parseSwapDescription(tx.description);
-    console.log('Swap details:', swapDetails);
+    // console.log('Swap details:', swapDetails);
 
     // Early validation check
     if (!swapDetails) {
@@ -570,17 +570,17 @@ function formatSwapMessage(tx, tokenData) {
 
 
     //format pad
-    const formattedWallet = padValue(`💳 Wallet: ${shortAddress}`, 40);
-    const formattedSwapped = padValue(`💱 Swapped: ${formatNumber(swapDetails.fromAmount)} ${fromToken}`, 40);
-    const formattedFor = padValue(`📤 For: ${formatNumber(swapDetails.toAmount)} ${toToken}`, 40);
-    const formattedPrice = padValue(`Price: $${price}`, 20);
-    const formattedMC = padValue(`MC: $${mc}`, 20);
-    const formattedVolume = padValue(`24h Vol: $${volume}`, 20);
+    const formattedWallet = padValue(`${shortAddress}`, 40);
+    const formattedSwapped = padValue(`<b>💱 Swapped:</b> ${formatNumber(swapDetails.fromAmount)} ${fromToken}`, 40);
+    const formattedFor = padValue(`<b>📥 For:</b> ${formatNumber(swapDetails.toAmount)} ${toToken}`, 40);
+    const formattedPrice = padValue(`<b>Price:</b> $${price}`, 20);
+    const formattedMC = padValue(`<b>MC:</b> $${mc}`, 20);
+    const formattedVolume = padValue(`<b>24h Vol:</b> $${volume}`, 20);
 
     const message = `
 🔄 <b>${swapMessage}</b>
 
-<a href="${gmgnLink}">${formattedWallet}</a>
+<b>💳 Wallet:</b> <a href="${gmgnLink}">${formattedWallet}</a>
 ${formattedSwapped}
 ${formattedFor}
 
@@ -639,14 +639,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
-
-
-// 💰 <b>Wallet:</b><a href="${gmgnLink}">${shortAddress}</a>
-// 💱 <b>Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
-// 📥 <b>For:</b> ${swapDetails.toAmount} ${toToken}
-
-// 🪙 <b>Token:</b> 
-// <a href="${gmgnTokenLink}">$${token.symbol?.toUpperCase() || 'UNKNOWN'}</a>
-// Price: $${price}
-// MC: $${mc}
-// 24Hrs Vol: $${volume}\n
