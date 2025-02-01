@@ -578,9 +578,9 @@ function formatSwapMessage(tx, tokenData) {
     const formattedVolume = padValue(`24h Vol: $${volume}`, 20);
 
     const message = `
-🔄 <b> ${swapMessage} </b>
+🔄 <b>${swapMessage}</b>
 
-<a href="${gmgnLink}"> ${formattedWallet} </a>
+<a href="${gmgnLink}">${formattedWallet}</a>
 ${formattedSwapped}
 ${formattedFor}
 
