@@ -505,6 +505,11 @@ function formatNumber(value) {
     }
 }
 
+function padValue (value, length) {
+    return value.toString().padEnd(length, ' ');
+};
+
+
 function formatSwapMessage(tx, tokenData) {
     const swapDetails = parseSwapDescription(tx.description);
     console.log('Swap details:', swapDetails);
@@ -552,25 +557,37 @@ function formatSwapMessage(tx, tokenData) {
     // Handle token symbols
     let fromToken = swapDetails.fromToken;
     let toToken = swapDetails.toToken;
+    let swapMessage;
+
 
     if (fromToken === 'SOL') {
         toToken = token.symbol;
+        swapMessage = "Buy Detected!";
     } else if (toToken === 'SOL') {
         fromToken = token.symbol;
+        swapMessage = "Sell Detected!";
     }
 
-    const message = `
-🔄 <b>New Swap Detected!</b>
 
-👛 <b>Wallet:</b> <a href="${gmgnLink}">${shortAddress}</a>
-📤 <b>Swapped:</b> ${swapDetails.fromAmount} ${fromToken}
-📥 <b>For:</b> ${formatNumber(swapDetails.toAmount)} ${toToken}
+    //format pad
+    const formattedWallet = padValue(`💳 Wallet: ${shortAddress}`, 40);
+    const formattedSwapped = padValue(`💱 Swapped: ${formatNumber(swapDetails.fromAmount)} ${fromToken}`, 40);
+    const formattedFor = padValue(`📤 For: ${formatNumber(swapDetails.toAmount)} ${toToken}`, 40);
+    const formattedPrice = padValue(`Price: $${price}`, 20);
+    const formattedMC = padValue(`MC: $${mc}`, 20);
+    const formattedVolume = padValue(`24h Vol: $${volume}`, 20);
+
+    const message = `
+🔄 <b> ${swapMessage} </b>
+
+<a href="${gmgnLink}"> ${formattedWallet} </a>
+${formattedSwapped}
+${formattedFor}
 
 <a href="${gmgnTokenLink}">$${token.symbol?.toUpperCase() || 'UNKNOWN'}</a>
-<b>Price:</b> $${price}
-<b>MC:</b> $${mc}
-<b>24h Vol:</b> $${volume}
-
+${formattedPrice}
+${formattedMC}
+${formattedVolume}
 `;
 
     return {
