@@ -379,7 +379,7 @@ function setupBotHandlers() {
 app.post('/webhook', async (req, res) => {
     try {
         const transactions = req.body;
-        // console.log('Received transactions:', transactions);
+        console.log('Received transactions:', transactions);
 
         for (const tx of transactions) {
             if (tx.type === 'SWAP') {
@@ -401,6 +401,8 @@ app.post('/webhook', async (req, res) => {
 
                     // Fetch token data
                     const tokenData = await getTokenInfo(tokenContract);
+
+                    const solanaData = await getTokenInfo('So11111111111111111111111111111111111111112');
                     // console.log('Token data:', tokenData);
 
                     if (!tokenData) {
@@ -412,7 +414,7 @@ app.post('/webhook', async (req, res) => {
                     const users = await db.findUsersForWallet(walletAddress);
 
                     // Format message once outside the user loop
-                    const formattedMessage = formatSwapMessage(tx, tokenData);
+                    const formattedMessage = formatSwapMessage(tx, tokenData, solanaData);
 
                     // Send to each subscribed user
                     for (const userId of users) {
@@ -510,7 +512,7 @@ function padValue (value, length) {
 };
 
 
-function formatSwapMessage(tx, tokenData) {
+function formatSwapMessage(tx, tokenData, solanaData) {
     const swapDetails = parseSwapDescription(tx.description);
     // console.log('Swap details:', swapDetails);
 
@@ -531,6 +533,7 @@ function formatSwapMessage(tx, tokenData) {
 
     // Safely access token data
     const token = tokenData?.data?.attributes;
+    const solana = solanaData?.data?.attributes;
     if (!token) {
         console.error('Token data is missing or invalid');
         return {
@@ -548,7 +551,7 @@ function formatSwapMessage(tx, tokenData) {
     const LYTBotSell = `https://t.me/LeYeetbot?start=sell_${token.address}`;
     const rugcheck = `https://rugcheck.xyz/tokens/${token.address}`;
     const shortAddress = `${swapDetails.address.slice(0, 6)}...${swapDetails.address.slice(-4)}`;
-
+    const fees = tx.fee/1000000000;
     // Format numbers
     const price = token.price_usd;
     const mc = formatNumber(token.fdv_usd);
@@ -558,21 +561,27 @@ function formatSwapMessage(tx, tokenData) {
     let fromToken = swapDetails.fromToken;
     let toToken = swapDetails.toToken;
     let swapMessage;
+    let fromTokenValue 
+    let toTokenValue
 
 
     if (fromToken === 'SOL') {
         toToken = token.symbol;
         swapMessage = "Buy Detected!";
+        fromTokenValue = swapDetails.fromAmount*solana.price_usd;
+        toTokenValue = swapDetails.toAmount*price
     } else if (toToken === 'SOL') {
         fromToken = token.symbol;
+        fromTokenValue = swapDetails.fromAmount*token.price_usd;
+        toTokenValue = swapDetails.toAmount*solana.price_usd
         swapMessage = "Sell Detected!";
     }
 
 
     //format pad
     const formattedWallet = padValue(`${shortAddress}`, 40);
-    const formattedSwapped = padValue(`<b>💱 Swapped:</b> ${formatNumber(swapDetails.fromAmount)} ${fromToken}`, 40);
-    const formattedFor = padValue(`<b>📥 For:</b> ${formatNumber(swapDetails.toAmount)} ${toToken}`, 40);
+    const formattedSwapped = padValue(`<b>💱 Swapped:</b> ${formatNumber(swapDetails.fromAmount)} ${fromToken} ($${(fromTokenValue).toFixed(2)})`, 40);
+    const formattedFor = padValue(`<b>📥 For:</b> ${formatNumber(swapDetails.toAmount)} ${toToken} ($${(toTokenValue).toFixed(2)})`, 40);
     const formattedPrice = padValue(`<b>Price:</b> $${price}`, 20);
     const formattedMC = padValue(`<b>MC:</b> $${mc}`, 20);
     const formattedVolume = padValue(`<b>24h Vol:</b> $${volume}`, 20);
@@ -581,8 +590,9 @@ function formatSwapMessage(tx, tokenData) {
 🔄 <b>${swapMessage}</b>
 
 <b>💳 Wallet:</b> <a href="${gmgnLink}">${formattedWallet}</a>
-${formattedSwapped}
+${formattedSwapped} 
 ${formattedFor}
+<b>💰 Fees:</b> ${fees} SOL ($${(fees*solana.price_usd).toFixed(4)})
 
 <a href="${gmgnTokenLink}">$${token.symbol?.toUpperCase() || 'UNKNOWN'}</a>
 ${formattedPrice}
