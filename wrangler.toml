@@ -2,3 +2,4 @@
 name = "solana-wallet-tracker"
 main = "bot.js"
 compatibility_date = "2025-02-04"
+compatibility_flags = ["nodejs_compat"]
