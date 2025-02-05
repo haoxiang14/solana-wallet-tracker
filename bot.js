@@ -14,8 +14,10 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
+
 // Initialize Express
 const app = express();
+
 app.use(bodyParser.json());
 
 async function updateHeliusWebhookAddresses(addresses) {
@@ -81,6 +83,10 @@ const MESSAGES = {
     SETTINGS_SOON: '⚙️ Settings feature coming soon!',
     HELP_SOON: 'ℹ️ Help section coming soon!'
 };
+
+const WHITELIST = [
+    5001628872
+]
 
 // Database operations
 const db = {
@@ -271,10 +277,13 @@ async function helpCommand(ctx) {
 
 function setupBotHandlers() {
 
-
     // Command handlers
     bot.onText(/\/start/, async (msg) => {
         try {
+            if (!WHITELIST.includes(msg.from.id)) {
+                await bot.sendMessage(msg.chat.id, '⛔ Access denied. You are not authorized.');
+                return;
+            }
             await bot.sendMessage(msg.chat.id, MESSAGES.WELCOME, mainMenuKeyboard);
         } catch (error) {
             console.error('Start command error:', error);
@@ -283,6 +292,10 @@ function setupBotHandlers() {
 
     bot.onText(/\/menu/, async (msg) => {
         try {
+            if (!WHITELIST.includes(msg.from.id)) {
+                await bot.sendMessage(msg.chat.id, '⛔ Access denied. You are not authorized.');
+                return;
+            }
             await bot.sendMessage(msg.chat.id, MESSAGES.WELCOME, mainMenuKeyboard);
         } catch (error) {
             console.error('Menu command error:', error);
@@ -291,6 +304,7 @@ function setupBotHandlers() {
 
     // Callback query handler
     bot.on('callback_query', async (query) => {
+
         const chatId = query.message.chat.id;
         
         try {
@@ -349,6 +363,7 @@ function setupBotHandlers() {
 
     // Text message handler
     bot.on('text', async (msg) => {
+
         const chatId = msg.chat.id;
         const state = stateManager.getState(chatId);
 
@@ -374,6 +389,7 @@ function setupBotHandlers() {
             stateManager.clearState(chatId);
         }
     });
+
 }
 
 app.post('/webhook', async (req, res) => {
